@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOS Data Log - Full View</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f4f7fc; font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px; }
+        .header-title { font-weight: 900; color: #2575fc; margin-bottom: 20px; }
+        .table-container { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); padding: 20px; }
+        .table thead { background: linear-gradient(90deg, #6a11cb, #2575fc); color: #fff; }
+        .badge { font-size: 0.9rem; padding: 0.5em 0.8em; }
+        .btn-back { margin-bottom: 20px; }
+        .table tbody tr:hover { background-color: rgba(37, 117, 252, 0.05); }
+        /* Dark Mode Colors */
+        body.dark-mode { background-color: #1a1a2e; color: #e0e0e0;}
+        body.dark-mode .table-container { background-color: #16213e; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        body.dark-mode .table { color: #e0e0e0; }
+        body.dark-mode .table-hover tbody tr:hover { background-color: rgba(252, 245, 245, 0.897); }
+        body.dark-mode .header-title { color: #4e89ff; }
+        /* Floating Toggle Button Style */
+        .dark-mode-toggle {cursor: pointer; padding: 8px 15px; border-radius: 20px; border: 1px solid #2575fc;
+            background: transparent; color: #2575fc; font-weight: bold; transition: 0.3s;
+        }
+        body.dark-mode .dark-mode-toggle { border-color: #4e89ff; color: #4e89ff; }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center">
+        <h2 class="header-title">Detailed SOS Data Log</h2>
+        <div>
+        <a href="index.html" class="btn btn-outline-primary btn-back">← Back to Dashboard</a>
+        <button id="darkModeToggle" class="btn btn-outline-primary btn-back">Dark Mode🌙</button>
+    </div>
+    </div>
+
+    <div class="table-container">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Device ID</th>
+                        <th>Location</th>
+                        <th>Members</th>
+                        <th>AI Summary</th>
+                        <th>Raw Message</th>
+                        <th>Severity</th>
+                        <th>Timestamp</th>
+                        <th>Handled</th>
+                        <th style=" min-width: 200px;">Action Taken</th>
+                    </tr>
+                </thead>
+                <tbody id="fullTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+    import { getFirestore, collection, onSnapshot, updateDoc, doc } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyBzrKD4IjHiaYvpn5jgr5JcbFNyssX6aUU",
+        authDomain: "floodrescue-f062a.firebaseapp.com",
+        projectId: "floodrescue-f062a",
+        storageBucket: "floodrescue-f062a.firebasestorage.app",
+        messagingSenderId: "143056819050",
+        appId: "1:143056819050:web:ac7be693be8306d41ecb13"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const tbody = document.getElementById("fullTableBody");
+
+    function getSeverityBadge(severity) {
+        let color = "secondary";
+        if (severity === "Critical" || severity === "High") color = "danger";
+        else if (severity === "Moderate") color = "warning";
+        else if (severity === "Low") color = "success";
+        return `<span class="badge bg-${color}">${severity || 'Unknown'}</span>`;
+    }
+
+    onSnapshot(collection(db, "C1"), (snapshot) => {
+        tbody.innerHTML = "";
+        let docs = [];
+        snapshot.forEach(snap => docs.push({ id: snap.id, ...snap.data() }));
+
+        // Sort: Unhandled first, then by priority
+        docs.sort((a, b) => (a.handled === b.handled) ? 0 : a.handled ? 1 : -1);
+
+        docs.forEach((d, i) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${i + 1}</td>
+                <td><b>${d.deviceId}</b></td>
+                <td><small>${d.latitude.toFixed(4)}, ${d.longitude.toFixed(4)}</small></td>
+                <td>${d.members}</td>
+                <td style="color: #2575fc; font-weight: 500;">${d.summary || 'Processing...'}</td>
+                <td><small>${d.message}</small></td>
+                <td>${getSeverityBadge(d.severity)}</td>
+                <td><small>${d.timestamp?.toDate().toLocaleString() || ""}</small></td>
+                <td>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" ${d.handled ? 'checked' : ''} onchange="updateHandled('${d.id}', this.checked)">
+                    </div>
+                </td>
+                <td>
+                    <select class="form-select form-select-sm" onchange="updateAction('${d.id}', this.value)">
+                        <option value="Not Assigned" ${d.actionTaken === 'Not Assigned' ? 'selected' : ''}>Not Assigned</option>
+                        <option value="Rescue Team Dispatched" ${d.actionTaken === 'Rescue Team Dispatched' ? 'selected' : ''}>Rescue Team Dispatched</option>
+                        <option value="Evacuation Completed" ${d.actionTaken === 'Evacuation Completed' ? 'selected' : ''}>Evacuation Completed</option>
+                    </select>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    });
+
+    window.updateHandled = async (id, val) => await updateDoc(doc(db, "C1", id), { handled: val });
+    window.updateAction = async (id, val) => await updateDoc(doc(db, "C1", id), { actionTaken: val });
+
+    // Dark Mode Toggle Logic
+    const toggleBtn = document.getElementById('darkModeToggle');
+    const body = document.body;
+
+    // Check for saved preference on load
+    if (localStorage.getItem('theme') === 'dark') {
+        body.classList.add('dark-mode');
+        toggleBtn.textContent = '☀️ Light Mode';
+    }
+
+    toggleBtn.addEventListener('click', () => {
+        body.classList.toggle('dark-mode');
+        
+        if (body.classList.contains('dark-mode')) {
+            localStorage.setItem('theme', 'dark');
+            toggleBtn.textContent = '☀️ Light Mode';
+        } else {
+            localStorage.setItem('theme', 'light');
+            toggleBtn.textContent = '🌙 Dark Mode';
+        }
+    });
+
+</script>
+</body>
+</html>
